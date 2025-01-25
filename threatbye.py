@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+from imblearn.over_sampling import SMOTE
 import pickle
 
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
@@ -51,6 +52,7 @@ if uploaded_file is not None:
             constant_cols.remove('Label')
         data = data.drop(columns=constant_cols)
         print(data.columns)
+
         numeric_cols = data.select_dtypes(include=[np.number])
         numeric_cols.replace([np.inf, -np.inf], np.nan, inplace=True)
         numeric_cols = numeric_cols.fillna(numeric_cols.mean())
@@ -87,6 +89,19 @@ if uploaded_file is not None:
         sns.countplot(x=y_train)
         st.pyplot()
 
+        #SMOTE
+
+        st.write("Handling class imbalance with SMOTE...")
+        smote = SMOTE(random_state=42)
+
+        X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+
+        st.write("Class distribution after applying SMOTE:")
+        resampled_class_counts = pd.Series(y_resampled).value_counts()
+        st.write(resampled_class_counts)
+        sns.countplot(x=y_resampled)
+        st.pyplot()
+
         st.header("5. Model Training & Evaluation")
 
         models = {
@@ -102,29 +117,44 @@ if uploaded_file is not None:
         for model_name, model in models.items():
             st.subheader(f"{model_name}")
 
-            # K-fold cross-validation
-            cv_scores = cross_val_score(model, X_train, y_train, cv=kf, scoring='accuracy')
+            # # K-fold cross-validation
+            # cv_scores = cross_val_score(model, X_train, y_train, cv=kf, scoring='accuracy')
+            # st.write(f"K-Fold Cross-Validation Accuracy Scores: {cv_scores}")
+            # st.write(f"Mean Accuracy: {np.mean(cv_scores):.5f}")
+            
+            # # Fit the model and evaluate on the test set
+
+
+            # # Save each trained model
+
+
+
+            # model.fit(X_train, y_train)
+            
+            
+            # model_filename = f"models/{model_name.replace(' ', '_')}_model.pkl"
+            # with open(model_filename, 'wb') as f:
+            #     pickle.dump(model, f)
+            # st.write(f"Model '{model_name}' saved as {model_filename}.")
+            
+            
+            # y_pred = model.predict(X_test)
+            # y_pred_prob = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
+
+            cv_scores = cross_val_score(model, X_resampled, y_resampled, cv=kf, scoring='accuracy')
             st.write(f"K-Fold Cross-Validation Accuracy Scores: {cv_scores}")
             st.write(f"Mean Accuracy: {np.mean(cv_scores):.5f}")
-            
+
             # Fit the model and evaluate on the test set
-
-
-            # Save each trained model
-
-
-
-            model.fit(X_train, y_train)
-            
-            
-            model_filename = f"{model_name.replace(' ', '_')}_model.pkl"
+            model.fit(X_resampled, y_resampled)
+            model_filename = f"models/{model_name.replace(' ', '_')}_model.pkl"
             with open(model_filename, 'wb') as f:
                 pickle.dump(model, f)
             st.write(f"Model '{model_name}' saved as {model_filename}.")
             
-            
             y_pred = model.predict(X_test)
             y_pred_prob = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
+
             
             accuracy = accuracy_score(y_test, y_pred)
             precision = precision_score(y_test, y_pred)

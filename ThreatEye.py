@@ -1,23 +1,38 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
 import pickle
 
-from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
-
-from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, 
-                             confusion_matrix, classification_report, roc_curve, auc)
 
 st.title("Intrusion Detection System using Machine Learning")
 
 st.header("1. Load Dataset")
+st.write("Upload your CSV file, or click the link below to download a sample file.")
+
+sample_files = [
+    {'name': 'Sample Data 1', 'url': 'https://drive.google.com/file/d/1_gRC0A34RnnJZG3M3GiBZViVvn0-ATbJ/view?usp=sharing'},
+    {'name': 'Sample Data 2', 'url': 'https://drive.google.com/file/d/1XT7Av59Ot04MrICRTpeyDT5L1dDs6lmI/view?usp=sharing'},
+    {'name': 'Sample Data 3', 'url': 'https://drive.google.com/file/d/13VkgTdO-Y5N7cPadetdbpDhUWVh6eIco/view?usp=sharing'}
+]
+
+
+table = "| Sample File Name | Download Link |\n"
+table += "|------------------|---------------|\n"
+for file in sample_files:
+    table += f"| {file['name']} | [Download]({file['url']}) |\n"
+
+
+st.markdown(table)
+
+# for file in sample_files:
+#     st.download_button(
+#         label=f"Download {file['name']}",
+#         data=file['url'],
+#         file_name=f"{file['name']}.csv",
+#         mime="text/csv"
+#     )
+
 uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
 
 if uploaded_file is not None:
@@ -40,21 +55,29 @@ if uploaded_file is not None:
        'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts',
        'Init Bwd Win Byts', 'Fwd Act Data Pkts', 'Active Mean', 'Active Std',
        'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', 'Idle Max',
-       'Idle Min', 'Label']
+       'Idle Min']
 
-    if len(data.columns) != len(required_columns):
-        st.write("Dataset is not complete. Please upload the complete dataset. The dataset needs the following columns :" + str(required_columns))
-    elif data.columns.sort() != required_columns.sort():
+    st.header("Required Columns")
+    st.write("The following columns are required for the analysis:")
+    st.write(required_columns)
+
+    missing = []
+    for i in list(data.columns):
+        if i not in required_columns:
+            missing.append(i)
+    for i in missing:
+        data = data.drop(i, axis=1)
+
+    if len(list(data.columns)) < len(required_columns):
+        missing_cols = list(set(required_columns) - set(list(data.columns)) ) 
+        st.write("Dataset is not complete. Please upload the complete dataset. The dataset needs the following columns :" + str(missing_cols))
+    elif list(data.columns).sort() != required_columns.sort():
         st.write("Column(s) mismatch")
     else:
         st.write("Dataset Preview:")
         st.dataframe(data.head())
 
-    if 'Label' not in data.columns:
-        st.warning("Label column not found in the dataset. Please check your dataset for a column containing the target labels.")
-        st.write("Columns in dataset:", data.columns)
-    else:
-        st.header("2. Data Preprocessing")
+        st.header("Data Preprocessing")
         
         st.write("Handling missing values...")
 
@@ -65,14 +88,11 @@ if uploaded_file is not None:
         for col in non_numeric_cols:
             data[col] = data[col].fillna(data[col].mode()[0])
 
-        label_encoder = LabelEncoder()
-        data['Label'] = label_encoder.fit_transform(data['Label'])
-        st.write("Encoded Label Column:")
+        # label_encoder = LabelEncoder()
+        # data['Label'] = label_encoder.fit_transform(data['Label'])
+        # st.write("Encoded Label Column:")
 
         constant_cols = data.columns[data.nunique() <= 1].tolist()
-        if 'Label' in list(constant_cols):
-            constant_cols.remove('Label')
-        data = data.drop(columns=constant_cols)
 
         numeric_cols = data.select_dtypes(include=[np.number])
         numeric_cols.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -82,122 +102,70 @@ if uploaded_file is not None:
         st.write("Preprocessed Data Preview:")
         st.dataframe(data.head())
 
-        st.header("3. Statistical Inference")
-        
-        st.write("Descriptive Statistics:")
-        st.write(data.describe())
-        
-        st.write("Correlation Matrix:")
-        corr_matrix = data.corr()
-        plt.figure(figsize=(10, 6))
-        sns.heatmap(corr_matrix, annot=False, cmap='Blues')
-        st.pyplot()
-
-        st.header("4. Feature Scaling")
+        st.header("Feature Scaling")
         st.dataframe(data.head()) 
-        X = data.drop('Label', axis=1)
-        y = data['Label']
 
+        X = data
+        if 'Label' in data.columns:
+            X = data.drop('Label', axis=1)
+            # y = data['Label']
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
+        X = X_scaled
 
-        st.write("Splitting the data into training and test sets...")
-        X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+        st.write("Done feature scaling.")
+        st.dataframe(data.head()) 
 
-        class_counts = y_train.value_counts()
-        st.write("Class distribution in training data:")
-        st.write(class_counts)
-        sns.countplot(x=y_train)
-        st.pyplot()
+        st.header("Querying the models")
 
-        st.header("5. Model Evaluation")
+        models = [
+            "Logistic Regression", 
+            "Decision Tree", 
+            "Random Forest",
+            "KNN" 
+        ]
 
-        models = {
-            "Logistic Regression": LogisticRegression(class_weight='balanced', max_iter=1000),
-            "Decision Tree": DecisionTreeClassifier(class_weight='balanced', random_state=42),
-            "Random Forest": RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42),
-            "KNN": KNeighborsClassifier()
-        }
-
-        model_metrics = []
-        kf = StratifiedKFold(n_splits=5)
-
-        for model_name, model in models.items():
+        for model_name in models:
             st.subheader(f"{model_name}")
 
-            # K-fold cross-validation
             name = f"models/{model_name.replace(' ', '_')}_model.pkl"
             print(name)
             with open(name, 'rb') as f:
                 model = pickle.load(f)
             print(model)
 
-            # cv_scores = cross_val_score(model, X_train, y_train, cv=kf, scoring='accuracy')
-            # st.write(f"K-Fold Cross-Validation Accuracy Scores: {cv_scores}")
-            # st.write(f"Mean Accuracy: {np.mean(cv_scores):.5f}")
-            
-            # Fit the model and evaluate on the test set
-            # model.fit(X_train, y_train)
             st.write(f"Loaded Model: {type(model).__name__}")
-            y_pred = model.predict(X_test)
-            y_pred_prob = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
-            
-            accuracy = accuracy_score(y_test, y_pred)
-            precision = precision_score(y_test, y_pred)
-            recall = recall_score(y_test, y_pred)
-            f1 = f1_score(y_test, y_pred)
-            
-            st.write(f"Accuracy on Test Data: {accuracy:.5f}")
-            st.write(f"Precision: {precision:.5f}")
-            st.write(f"Recall: {recall:.5f}")
-            st.write(f"F1-Score: {f1:.5f}")
-            
-            if y_pred_prob is not None:
-                auc_roc = roc_auc_score(y_test, y_pred_prob)
-                st.write(f"AUC-ROC: {auc_roc:.5f}")
-                
-                fpr, tpr, _ = roc_curve(y_test, y_pred_prob)
-                plt.figure()
-                plt.plot(fpr, tpr, label=f"{model_name} (AUC = {auc_roc:.5f})")
-                plt.plot([0, 1], [0, 1], linestyle="--", color='gray')
-                plt.xlabel("False Positive Rate")
-                plt.ylabel("True Positive Rate")
-                plt.title(f"ROC Curve for {model_name}")
-                plt.legend()
-                st.pyplot()
+            y_pred = model.predict(X)
+            y_pred_prob = model.predict_proba(X)[:, 1] if hasattr(model, "predict_proba") else None
 
-            conf_matrix = confusion_matrix(y_test, y_pred)
-            st.write("Confusion Matrix:")
-            sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues')
-            st.pyplot()
+            vectorized = np.vectorize(lambda x: 'Anomaly' if x == 1 else 'Normal')
 
-            model_metrics.append({
-                "Model": model_name,
-                "Accuracy": accuracy,
-                "Precision": precision,
-                "Recall": recall,
-                "F1-Score": f1,
-                "AUC-ROC": auc_roc if y_pred_prob is not None else "N/A"
-            })
-
-            data[f'{model_name}_Prediction'] = model.predict(X_scaled)
+            labels = vectorized(y_pred)
+            st.write(labels)
+            data[f'{model_name}_Prediction'] = y_pred
             data[f'{model_name}_Label'] = data[f'{model_name}_Prediction'].apply(lambda x: 'Anomaly' if x == 1 else 'Normal')
 
         st.header("Model Metrics Summary")
-        metrics_df = pd.DataFrame(model_metrics)
-        st.dataframe(metrics_df)
+        # metrics_df = pd.DataFrame(model_metrics)
+        # st.dataframe(metrics_df)
 
         st.subheader("Final Predicted Labels for the Entire Dataset")
-        model_columns = [f'{model}_Label' for model in models.keys()]
+        # model_columns = required_columns.copy()
+        model_columns = [f'{model}_Label' for model in models]
+        # model_columns.append("Label")
+        data['Majority prediction'] = data[model_columns].mode(axis=1)[0]
+        model_columns.append('Majority prediction')
         st.write(data[model_columns])
+        st.write(data['Majority prediction'])
 
-        st.header("6. Final Output")
+        st.header("Final Output")
 
-        models = [f'{model}_Label' for model in models.keys()]
+        models = [f'{model}_Label' for model in models]
 
-        data['Any_Model_Malicious'] = data[models].apply(lambda x: 'Anomaly' in x.values, axis=1)
+        # data['Any_Model_Malicious'] = data[models].apply(lambda x: 'Anomaly' in x.values, axis=1)
 
-        malicious_counts = data['Any_Model_Malicious'].sum()
+        # malicious_counts = data['Any_Model_Malicious'].sum()
+        malicious_counts = (data['Majority prediction'] == 'Anomaly').sum()
 
         total_records = data.shape[0]
 
@@ -207,10 +175,10 @@ if uploaded_file is not None:
         st.write(f"Malicious Records: {malicious_counts}")
         st.write(f"Percentage of Malicious Records: {malicious_percentage:.2f}%")
 
-        if malicious_percentage < 10:
-            st.success("The file is classified as NOT malicious based on the threshold of 10%.")
-        else:
-            st.error("The file contains 10% or more malicious records and is classified as malicious.")
+    # if malicious_percentage < 10:
+    #     st.success("The file is classified as NOT malicious based on the threshold of 10%.")
+    # else:
+    #     st.error("The file contains 10% or more malicious records and is classified as malicious.")
 else:
     st.write("Please upload a CSV file to begin.")
 
